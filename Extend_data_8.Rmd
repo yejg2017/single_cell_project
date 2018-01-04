@@ -1,0 +1,237 @@
+---
+title: "Org_RANKL_UMIcounts"
+author: "yejg"
+date: "2017/12/26"
+output: html_document
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE,tidy = TRUE)
+```
+
+###  Library  necessary packages
+```{r,message=FALSE,message=FALSE}
+library(NMF)
+library(rsvd)
+library(Rtsne)
+library(ggplot2)
+library(cowplot)
+library(sva)
+library(igraph)
+library(cccd)
+library(KernSmooth)
+library(beeswarm)
+library(stringr)
+library(reshape2)
+library(formatR)
+library(destiny)
+source('Fxns.R')
+```
+
+###  Load data
+```{r}
+RANKL_UMIs<-load_data(data_name = './Extend_data/GSE92332_Org_RANKL_UMIcounts.txt.gz')
+RANKL_UMIs<-RANKL_UMIs[which(unlist(apply(RANKL_UMIs,1,sum))>0),]
+RANKL_tpm = data.frame(log2(1+tpm(RANKL_UMIs)))
+```
+
+###  Select variables
+```{r}
+v = get.variable.genes(RANKL_UMIs, min.cv2 = 100)
+var.genes = as.character(rownames(v)[v$p.adj<0.05])  # select genes
+```
+
+###  Check batch effect
+```{r}
+RANKL.all.cells<-colnames(RANKL_UMIs)
+RANKL.all.genes<-rownames(RANKL_UMIs)
+
+RANKL.condition<-unlist(lapply(RANKL.all.cells,function(x)return(str_split(x,'_')[[1]][3])))
+RANKL.cell.groups<-unlist(lapply(RANKL.all.cells,function(x)return(str_split(x,'_')[[1]][4])))
+RANKL.batches<-unlist(lapply(RANKL.all.cells,function(x)return(str_split(x,'_')[[1]][1])))
+
+table(RANKL.batches)
+
+batch_mean_tpm = group.means(counts = RANKL_tpm, groups = RANKL.batches)
+x = batch_mean_tpm[, 1]
+y = batch_mean_tpm[,2]
+expr.cor = round(cor(x,y),2)
+smoothScatter(x, y, nrpoints=Inf, pch=16, cex=0.25, main=sprintf("Before batch correction, correlation between \ntwo illustrative batches is %s", expr.cor), xlab="All genes Batch 2, mean log2(TPM+1)", ylab="All genes Batch  1, mean log2(TPM+1)")
+
+```
+
+###  Remove batch effect 
+     The result show that maybe the data have batch effect
+```{r}
+RANKL_tpm_norm = batch.normalise.comBat(counts = as.matrix(RANKL_tpm), batch.groups = RANKL.batches)
+batch_mean_tpm_norm = group.means(counts =RANKL_tpm_norm, groups = RANKL.batches)
+x = batch_mean_tpm_norm[, 1]
+y = batch_mean_tpm_norm[,2]
+expr.cor = round(cor(x,y),2)
+smoothScatter(x, y, nrpoints=Inf, pch=16, cex=0.25, main=sprintf("After batch correction, correlation between \ntwo illustrative batches is %s", expr.cor), xlab="All genes Batch 2, mean log2(TPM+1)", ylab="All genes Batch  1, mean log2(TPM+1)")
+
+```
+
+### TSNE,PCA
+```{r}
+###  TSNE
+RANKL.tsne.rot<-PCA_TSNE.scores(data.tpm = RANKL_tpm_norm,data.umis = RANKL_UMIs,var_genes = var.genes,
+                               data_name = './Extend_data/Org_RANK',sig.pcs = TRUE,is.var.genes = TRUE)
+
+
+RANKL.tsne.rot<-data.frame(RANKL.tsne.rot)
+colnames(RANKL.tsne.rot)<-c('tSNE_1','tSNE_2')
+pca<-read.table('./Extend_data/Org_RANK_pca_scores.txt')
+```
+
+###  Figure a
+```{r}
+ggplot(data = RANKL.tsne.rot[RANKL.condition=='Control',],aes(x=tSNE_1,y=tSNE_2))+geom_point()+
+  scale_color_manual(values=brewer16)+scale_fill_discrete()+theme(legend.title=element_blank())+ggtitle('Org RANKL Control')
+
+
+ggplot(data = RANKL.tsne.rot[RANKL.condition=="RANKL.Day3",],aes(x=tSNE_1,y=tSNE_2))+geom_point()+
+  scale_color_manual(values=brewer16)+scale_fill_discrete()+theme(legend.title=element_blank())+ggtitle('Org RANKL Day3')
+
+ggplot(data = RANKL.tsne.rot[RANKL.condition=="RANKL.Day6",],aes(x=tSNE_1,y=tSNE_2))+geom_point()+
+  scale_color_manual(values=brewer16)+scale_fill_discrete()+theme(legend.title=element_blank())+ggtitle('Org RANKL Day6')
+
+```
+
+### Figure b
+
+```{r}
+Tnfaip2<-Genes_mean_tpm(genes = 'Tnfaip2',tpm_data = RANKL_tpm_norm,tsne_data = RANKL.tsne.rot,title = 'M-sec')
+
+```
+
+###   Figure c
+```{r}
+Gp2<-Genes_mean_tpm(genes = 'Gp2',tpm_data = RANKL_tpm_norm,tsne_data = RANKL.tsne.rot,title =NULL)
+
+```
+
+###   Figure d
+    Expression of microfold cell marker genes in each of the organoid cell clusters. Violin plots show the distribution of expression levels (log2(TPM + 1)) for each of ten previously reported microfold cell marker genes (columns), in the cells (points) in each of 13 clusters,
+including mature microfold cells (red), identified by k-nearest-neighbour clustering of the 5,434 scRNA-seq profiles from organoids
+
+```{r,fig.height=15,fig.width=12}
+library(vioplot)
+RANKL.marker.genes<-c('Anxa5','Ccl20','Ccl6','Ccl9','Gp2','Marcksl1','Pglyrp1','Rac2',
+                      'Spib','Tnfaip2')
+
+Groups.color<-ifelse(RANKL.cell.groups=='M.cell','blue','red')
+Violin_Genes<-function(gene,tpm.data,cell.groups,marker.genes,groups.color){
+     x<-data.frame(t(tpm.data[marker.genes,]))
+     dat<-data.frame(x[,gene])
+     dat$Groups<-cell.groups
+     colnames(dat)<-c(gene,'Groups')
+     
+     print(ggplot(data = dat,aes(x=dat[,2],y=dat[,1]))+geom_violin(aes(colour=Groups.color))+coord_flip()+
+                     geom_jitter(shape=16, position=position_jitter(0.1),size=1)+theme(legend.title = element_blank(),legend.position = 'none',
+                                                                                      axis.text.y = element_text(colour = c(rep('blue',6),'red',rep('blue',6))))+ylab(gene)+xlab(NULL))
+}
+
+
+
+RANKL.marker.tpm<-data.frame(t(RANKL_tpm_norm[RANKL.marker.genes,]))
+RANKL.marker.tpm$Cells<-RANKL.cell.groups
+RANKL.marker.tpm.melt<-melt(RANKL.marker.tpm)
+
+ggplot(data=RANKL.marker.tpm.melt,aes(x=Cells,y=value))+
+  geom_violin(aes(fill=value,colour=Cells),trim = FALSE)+
+  geom_jitter(shape=16,size=0.2, position=position_jitter(width = 0.2))+
+  facet_wrap(~ variable, nrow = 10)+
+  xlab(NULL)+ylab('Expression\n(Log2(TPM+1)')+
+  theme(axis.text.x = element_text(size=10,angle = 90,face = 'bold',
+                                   colour = c(rep('blue',6),'red',rep('blue',6))))
+```
+
+### Figure e
+####   Method 1(ggplot2)
+```{r}
+heatmap.cells.e<-c("Endocrine","Tuft","Enterocyte.1","Stem","Goblet","M.cell")
+heatmap.genes.e<-c('Aif1','Adm','Bcl2a1b','Bcl2a1a','C1qtnf6','Fam131a','H2-M2','Msln','Padi2',
+                  'Psg27','Psg25','Rassf2','Rps6kl1','Sox8','Tnfrsf11b','Tnfrsf4','Ccl9','Anxa5',
+                  'Spib','Ctsh','Fabp5','Ccl20','Pglyrp1','Rac2','Gjb2','Marcksl1','Bcl2a1d','Gp2',
+                  'Slc2a6','Pold1','Ubd','Mfge8','Rab32','Myadm','Frmd4b','Ncf4','Cyba','St5','Tmprss2',
+                  'Epb41l2','Mmp15','Far2','Gfer','Zmat3')
+
+heatmap.e<-Create_plot_data(genes = heatmap.genes.e,origin.data = RANKL_tpm_norm,cell_groups = RANKL.cell.groups,
+                 cells = heatmap.cells.e)
+
+p<-ggplot(heatmap.e,aes(x=Groups,y=variable))+geom_tile(aes(fill=value))+scale_fill_gradient2(mid ='grey',high='red',name='Mean\nLog2(TPM+1)')
+#scale_fill_continuous(low='lightblue',high='red')+theme_bw()
+
+
+p+labs(x='',y='')+scale_x_discrete(expand = c(0,0),position = 'bottom')+
+  scale_y_discrete(expand = c(0,0),position = 'right')+theme(axis.text.x = element_text(face="bold", color=c("red"), size=10,hjust = 1,angle = 90),
+                                                             axis.text.y = element_text(size=8),
+                                                             panel.grid.major.y  = element_blank(),
+                                                             panel.grid.minor.y = element_blank(),
+                                                             panel.border = element_blank(),
+                                                             axis.line = element_line(colour = "black"))
+                                                             
+
+```
+
+#####  Method 2 (aheatmap)
+```{r}
+Heatmap.e.tpm<-Heatmap_fun(genes=heatmap.genes.e,tpm.data = RANKL_tpm_norm,condition = heatmap.cells.e,all.condition = RANKL.cell.groups)
+NMF::aheatmap(Heatmap.e.tpm[[2]],Rowv = NA,Colv = NA,
+              annCol = Heatmap.e.tpm[[1]],
+              scale = 'none')
+```
+
+
+###  Figure f
+####  Method 1(ggplot2)
+```{r}
+heatmap.cells.f<-c("Endocrine","Tuft","Enterocyte.1","Stem","Goblet","M.cell")
+heatmap.genes.f<-c('Ahr','Mtf1','Relb','Mier3','Sox8','Tulp4','Onecut2','Fosl2',
+                   'Irf6','Irf2','Zfp553','Nfib','Spib','Foxp4')
+
+
+
+heatmap.f<-Create_plot_data(genes = heatmap.genes.f,origin.data = RANKL_tpm_norm,cell_groups = RANKL.cell.groups,
+                            cells = heatmap.cells.f)
+
+p<-ggplot(heatmap.f,aes(x=Groups,y=variable))+geom_tile(aes(fill=value))+scale_fill_gradient2(mid ='grey',high='red',name='Mean\nLog2(TPM+1)')
+#scale_fill_continuous(low='lightblue',high='red')+theme_bw()
+
+
+p+labs(x='',y='')+scale_x_discrete(expand = c(0,0),position = 'bottom')+
+  scale_y_discrete(expand = c(0,0),position = 'right')+theme(axis.text.x = element_text(face="bold", color=c("red"), size=10,hjust = 1,angle = 90),
+                                                             axis.text.y = element_text(size=8),
+                                                             panel.grid.major.y  = element_blank(),
+                                                             panel.grid.minor.y = element_blank(),
+                                                             panel.border = element_blank(),
+                                                             axis.line = element_line(colour = "black"))
+
+
+```
+
+####  Method 2 (aheatmap)
+```{r}
+Heatmap.f.tpm<-Heatmap_fun(genes=heatmap.genes.f,tpm.data = RANKL_tpm_norm,condition = heatmap.cells.f,all.condition = RANKL.cell.groups)
+NMF::aheatmap(Heatmap.f.tpm[[2]],Rowv = NA,Colv = NA,
+              annCol = Heatmap.f.tpm[[1]],
+              scale = 'none')
+```
+
+
+###  Figure g
+```{r}
+##  Figure g
+library(vioplot)
+M.cells<-RANKL_tpm_norm[var.genes,RANKL.cell.groups%in%'M.cell']
+All.cells<-RANKL_tpm_norm[var.genes,]
+
+M.cells.mean<-unlist(apply(M.cells,2,mean))
+All.cells.mean<-unlist(apply(All.cells,2,mean))
+
+vioplot(All.cells.mean,M.cells.mean,names = c('All.cells','M.cells'),col = c('pink','red'))
+title(ylab = 'ln vitro M cell signature\nLog2(TPM+1)')
+```
+

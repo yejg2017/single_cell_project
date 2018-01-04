@@ -1,0 +1,127 @@
+---
+title: "LargeCellSort_UMIcounts"
+author: "yejg"
+date: "2017/12/25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE,message = FALSE,warning = FALSE,tidy = TRUE)
+```
+
+###  Library  necessary packages
+```{r,message=FALSE,message=FALSE}
+library(NMF)
+library(rsvd)
+library(Rtsne)
+library(ggplot2)
+library(cowplot)
+library(sva)
+library(igraph)
+library(cccd)
+library(KernSmooth)
+library(beeswarm)
+library(stringr)
+library(reshape2)
+library(formatR)
+source('Fxns.R')
+```
+
+###  Load data
+```{r}
+LargeCellSort_UMIs<-load_data('./Extend_data/GSE92332_LargeCellSort_UMIcounts.txt.gz') 
+###  whether need this step??
+gene_expr<-as.numeric(apply(LargeCellSort_UMIs,1,sum))
+LargeCellSort_UMIs<-LargeCellSort_UMIs[which(gene_expr>0),]
+###  
+
+LargeCellSort_tpm<-data.frame(log2(1+tpm(LargeCellSort_UMIs)))  # transform for tpm value
+```
+
+### Select varibles
+```{r}
+v = get.variable.genes(LargeCellSort_UMIs, min.cv2 = 100)
+var.genes = as.character(rownames(v)[v$p.adj<0.05])
+```
+
+```{r}
+cell.groups<-unlist(lapply(colnames(LargeCellSort_UMIs),function(x) return(str_split(x,'_')[[1]][4])))
+batches<-unlist(lapply(colnames(LargeCellSort_UMIs),function(x) return(str_split(x,'_')[[1]][3])))
+mices<-unlist(lapply(colnames(LargeCellSort_UMIs),function(x) return(str_split(x,'_')[[1]][2])))
+
+table(batches)   
+
+```
+
+### Check batch effect
+```{r}
+batch_mean_tpm = group.means(counts = LargeCellSort_tpm, groups = batches)
+x = batch_mean_tpm[, 1]
+y = batch_mean_tpm[,2]
+expr.cor = round(cor(x,y),2)
+smoothScatter(x, y, nrpoints=Inf, pch=16, cex=0.25, main=sprintf("Before batch correction, correlation between \ntwo illustrative batches is %s", expr.cor), xlab="All genes Batch 2, mean log2(TPM+1)", ylab="All genes Batch  1, mean log2(TPM+1)")
+
+```
+####  result show that there is not batch effect
+
+
+###  Unsupervise cluster
+#### PCA,TSNE
+```{r}
+tsne.rot<-PCA_TSNE.scores(data.tpm =LargeCellSort_tpm,data.umis = LargeCellSort_UMIs,var_genes = var.genes,data_name = './Extend_data/LargeCellSort')
+tsne.rot<-data.frame(tsne.rot)
+colnames(tsne.rot)<-c('tSNE_1','tSNE_2')
+pca<-read.table('./Extend_data/LargeCellSort_pca_scores.txt')
+```
+
+
+###  Figure a
+   Paneth cell subsets. t-SNE of 10,396 single cells
+(points) was obtained using a large cell-enriched protocol (Methods),coloured by cluster annotation 
+```{r}
+ggplot(data = tsne.rot,aes(x=tSNE_1,y=tSNE_2,color=cell.groups))+geom_point()+
+  scale_color_manual(values=brewer16)+scale_fill_discrete()+theme(legend.title=element_blank())
+
+```
+
+
+###   Figure b
+   Paneth cell subset markers
+```{r}
+all.genes<-rownames(LargeCellSort_tpm)
+cells<-c("Paneth.2","Paneth.1")
+genes<-c('Defa20','Gm15308','Defa22','Defa21','Gm15315','Gm21002','Nupr1',
+         'Gm15293','Pnliprp2','Itln1','Rnase1','AY761184','Gm15284','Defa23',
+         'Clps','Defa17','Gm15299','Gm15292','Guca2b')
+
+Paneth.tpm<-Heatmap_fun(genes,tpm.data = LargeCellSort_tpm,condition = cells,all.condition = cell.groups)
+aheatmap(x=Paneth.tpm[[2]],Colv = NA,Rowv = NA,annCol = Paneth.tpm[[1]])
+```
+
+###  Figure c
+    Two Paneth subsets reflect regional  diversity
+```{r}
+Regional_UMIs<-load_data("./Extend_data/GSE92332_Regional_UMIcounts.txt.gz")
+Regional_tpm<-data.frame(log2(1+tpm(Regional_UMIs)))
+regional.genes<-rownames(Regional_UMIs)
+region.groups<-unlist(lapply(colnames(Regional_tpm),function(x)return(str_split(x,'_')[[1]][2])))
+
+regional.cell.groups<-unlist(lapply(colnames(Regional_tpm),function(x)return(str_split(x,'_')[[1]][4])))
+
+regional.paneth.tpm<-Heatmap_fun(genes,tpm.data = Regional_tpm[,regional.cell.groups%in%'Paneth'],condition =unique(region.groups),all.condition = region.groups[regional.cell.groups%in%'Paneth'])
+
+aheatmap(x=regional.paneth.tpm[[2]],Colv = NA,Rowv = NA,annCol = regional.paneth.tpm[[1]])
+```
+   
+
+###    Figure e
+       Regional variation of intestinal stem cells.
+```{r}
+genes.e<-c('Eef1g','Gstm1','Rgcc','Wfdc10','Amica1','Ifitm3','Gkn3','Uba52','Acot1',
+           'Nrtn','Eef1b2','Hmgcs2','Hspa8','Pdgfa','Btf3','2210407C18Rik','Clca3b','Sord',
+           'Tfpi','Bex4','Bex1','Gas6','Bspry','Cyba')
+
+regional.stem.tpm<-Heatmap_fun(genes.e,tpm.data = Regional_tpm[,regional.cell.groups%in%'Stem'],condition =unique(region.groups),all.condition = region.groups[regional.cell.groups%in%'Paneth'])
+aheatmap(x=regional.stem.tpm[[2]],Colv = NA,Rowv = NA,annCol = regional.stem.tpm[[1]])
+```
+

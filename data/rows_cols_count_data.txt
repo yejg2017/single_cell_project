@@ -1,0 +1,20 @@
+GSE92332_AtlasFullLength_TPM.txt.gz 20109 
+1523         
+GSE92332_atlas_UMIcounts.txt.gz 15972 
+7217         
+GSE92332_EEC_UMIcounts.txt.gz 14226 
+534          
+GSE92332_FAE_UMIcounts.txt.gz 14758 
+3261         
+GSE92332_LargeCellSort_UMIcounts.txt.gz 27999 
+10397        
+GSE92332_Org_RANKL_UMIcounts.txt.gz 15181 
+5435         
+GSE92332_Regional_UMIcounts.txt.gz 27999 
+11666        
+GSE92332_SalmHelmFullLength_TPM.txt.gz 18029 
+390          
+GSE92332_SalmHelm_UMIcounts.txt.gz 15216 
+9843         
+GSE92332_SalmonellaInfect_UMIcounts.txt.gz 17547 
+5270         

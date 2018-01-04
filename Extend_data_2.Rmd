@@ -1,0 +1,213 @@
+---
+title: "Atlas_TPM"
+author: "yejg"
+date: "2017/12/25"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+###  Library necessary packages
+```{r,warning=FALSE,message=FALSE}
+library(KernSmooth)
+library(NMF)
+library(rsvd)
+library(Rtsne)
+library(ggplot2)
+library(cowplot)
+library(sva)
+library(igraph)
+library(cccd)
+library(destiny)
+library(stringr)
+library(reshape2)
+library(formatR)
+source('Fxns.R')
+```
+
+### Load data
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+atlas_full_tpm<-load_data('./Extend_data/GSE92332_AtlasFullLength_TPM.txt.gz')
+atlas_full_tpm<-data.frame(log2(1+atlas_full_tpm))
+```
+
+### Select variables
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+v = get.variable.genes(atlas_full_tpm, min.cv2 = 100)
+var.genes = as.character(rownames(v)[v$p.adj<0.05])
+
+atlas_full_tpm_sample<-colnames(atlas_full_tpm)
+cells.group<-unlist(lapply(atlas_full_tpm_sample,function(x)return(str_split(x,"_")[[1]][4])))
+
+```
+
+
+###  TSNE,PCA data
+```{r,message=FALSE,warning=FALSE,tidy=TRUE}
+pca<-read.table('./Extend_data/AtlasFull_pca_scores.txt')
+tsne.rot<-PCA_TSNE.scores(data.tpm = atlas_full_tpm,data.umis = atlas_full_tpm,var_genes = var.genes,data_name = './Extend_data/AtlasFull')
+colnames(tsne.rot)<-c('tSNE_1','tSNE_2')
+tsne.rot<-as.data.frame(tsne.rot)
+```
+
+###   Figure a
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+ggplot(tsne.rot,aes(x=tSNE_1,y=tSNE_2,color=cells.group))+geom_point()+scale_color_manual(values=brewer16)
+```
+
+
+### Mark genes
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+# stem mark genes
+stem_mark_genes<-c('Lgr5','Ascl2','Slc12a2','Axin2','Olfm4','Gkn3')
+Genes_mean_tpm(stem_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Stem')
+
+
+
+# Cell cycle
+cell_cycle_mark_genes<-c('Mki67','Cdk4','Mcm5','Mcm6','Pcna')
+Genes_mean_tpm(cell_cycle_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Cell cycle')
+
+
+# Enterocyte
+Enterocyte_mark_genes<-c('Alpi','Apoa1','Apoa4','Fabp1')
+Genes_mean_tpm(Enterocyte_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Enterocyte')
+
+
+# Globlet
+Globlet_mark_genes<-c('Muc2','Clca1','Tff3','Agr2')
+Genes_mean_tpm(Globlet_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Globet')
+
+# Paneth
+Paneth_mark_genes<-c('Lyz1','Defa17','Defa22','Defa24','Ang4')
+Genes_mean_tpm(Paneth_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Paneth')
+
+
+#  Enteroendocrine
+Enteroendocrine_mark_genes<-c('Chga','Chgb','Tac1','Tph1','Neurog3')
+Genes_mean_tpm(Enteroendocrine_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Enteroendocrine')
+
+
+
+# Tuft
+Tuft_mark_genes<-c('Dclk1','Trpm5','Gfi1b','Il25')
+Genes_mean_tpm(Tuft_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Tuft')
+
+```
+
+
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+# number of detected genes
+Count_genes<-function(x){
+  count<-0
+  for(c in x){
+    if(c!=0){
+      count<-count+1
+    }
+  }
+  return(count)
+}
+
+Genes_per_cell<-as.numeric(apply(atlas_full_tpm,2,Count_genes))
+ggplot(tsne.rot, aes(x=tSNE_1, y=tSNE_2))+geom_point(aes(color=Genes_per_cell))+ggtitle('Genes/Cell')+
+  theme(legend.title = element_text("Genes/Cell",size=8,color='blue',face='bold'),
+                  legend.position = 'right') +scale_color_gradient2(low='lightblue',mid='green',high='red')
+
+```
+
+
+###  Figure b
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+marker.genes<-as.character(read.table('./Extend_data/Figure_b_genes.txt')$V1)
+cells =c("Paneth","Endocrine","Goblet","Tuft","Enterocyte")
+tpm.ann<-Heatmap_fun(genes=marker.genes,tpm.data = atlas_full_tpm,condition = cells,all.condition = cells.group)
+NMF::aheatmap(tpm.ann[[2]],Rowv = NA,Colv = NA,
+              annCol = tpm.ann[[1]],
+              scale = 'none')
+```
+
+###   Figure c
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+Mptx2_mark_genes<-c('Mptx2')
+Genes_mean_tpm(Mptx2_mark_genes,tpm_data = atlas_full_tpm,tsne_data =tsne.rot,title = 'Mptx2')
+
+
+atlas_umis = load_data("./Extend_data/GSE92332_atlas_UMIcounts.txt.gz")
+atlas_tpm = data.frame(log2(1+tpm(atlas_umis)))
+
+atlas.tsne.rot = read.table("./Extend_data/atlas_tsne_scores.txt")
+colnames(atlas.tsne.rot)<-c('tSNE_1','tSNE_2')
+Genes_mean_tpm(Mptx2_mark_genes,tpm_data = atlas_tpm,tsne_data =atlas.tsne.rot,title = 'Mptx2')
+
+```
+
+### Figure d
+```{r,warning=FALSE,message=FALSE,tidy=TRUE}
+GPCRs<-read.table('./Extend_data/GPCRS.txt')
+GPCRs<-as.character(GPCRs$V1)
+
+GPCRs.ann<-Heatmap_fun(genes=GPCRs,tpm.data = atlas_full_tpm,condition =unique(cells.group),all.condition = cells.group)
+NMF::aheatmap(GPCRs.ann[[2]],Rowv = NA,Colv = NA,
+              annCol = GPCRs.ann[[1]],
+              scale = 'none')
+
+```
+
+
+
+###  Figure e
+```{r,message=FALSE,warning=FALSE,tidy=TRUE}
+LRRS<-read.table('./Extend_data/LRRS.txt')
+LRRS<-as.character(LRRS$V1)
+
+LRRs.ann<-Heatmap_fun(genes=LRRS,tpm.data = atlas_full_tpm,condition =unique(cells.group),all.condition = cells.group)
+NMF::aheatmap(LRRs.ann[[2]],Rowv = NA,Colv = NA,
+              annCol = LRRs.ann[[1]],
+              scale = 'none')
+
+
+atlas_lrrs<-Create_plot_data(genes = LRRS,origin.data = atlas_full_tpm,cell_groups = cells.group,var_genes = NULL,if.use.var.genes = FALSE)
+p<-ggplot(atlas_lrrs,aes(x=Groups,y=variable))+geom_tile(aes(fill=value))+
+  scale_fill_continuous(low='lightblue',high='red')+ggtitle('LRRS')+theme_bw()
+
+
+p+labs(x='',y='')+scale_x_discrete(expand = c(0,0),position = 'bottom')+
+  scale_y_discrete(expand = c(0,0),position = 'right')+theme(axis.text.x = element_text(face="bold", color="blue", size=8,hjust = 1,angle = 90),
+                                                             axis.text.y = element_text(color='blue',size=6),
+                                                             panel.border = element_blank(),
+                                                             panel.grid.major = element_blank(),
+                                                             panel.grid.minor = element_blank(),
+                                                             axis.line = element_line(colour = "black"))
+
+
+```
+
+###  Figure f
+```{r,message=FALSE,tidy=TRUE,warning=FALSE}
+transition_factors<-read.table('./Extend_data/Transition-factors.txt')
+transition_factors<-as.character(transition_factors$V1)
+
+TF.ann<-Heatmap_fun(genes=transition_factors,tpm.data = atlas_full_tpm,condition =unique(cells.group),all.condition = cells.group)
+NMF::aheatmap(TF.ann[[2]],Rowv = NA,Colv = NA,
+              annCol = TF.ann[[1]],
+              scale = 'none')
+
+
+
+atlas_tf<-Create_plot_data(genes = transition_factors,origin.data = atlas_full_tpm,cell_groups = cells.group,var_genes = NULL,if.use.var.genes = FALSE)
+p<-ggplot(atlas_tf,aes(x=Groups,y=variable))+geom_tile(aes(fill=value))+
+  scale_fill_continuous(low='lightblue',high='red')+ggtitle('LRRS')+theme_bw()
+
+
+p+labs(x='',y='')+scale_x_discrete(expand = c(0,0),position = 'bottom')+
+  scale_y_discrete(expand = c(0,0),position = 'right')+theme(axis.text.x = element_text(face="bold", color="blue", size=8,hjust = 1,angle = 90),
+                                                             axis.text.y = element_text(color='blue',size=2),
+                                                             panel.border = element_blank(),
+                                                             panel.grid.major = element_blank(),
+                                                             panel.grid.minor = element_blank(),
+                                                             axis.line = element_line(colour = "black"))
+
+```
+
