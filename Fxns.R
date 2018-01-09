@@ -316,6 +316,8 @@ PCA_TSNE.scores<-function(data.tpm,data.umis,var_genes,data_name,is.var.genes=TR
     }
     
     tsne.rot = barnes_hut_tsne$Y
+    tsne.rot<-as.data.frame(tsne.rot)
+    colnames(tsne.rot)<-c('tSNE_1','tSNE_2')
     write.table(tsne.rot,file = tsne_name,quote = F)
   }
   return(tsne.rot)
@@ -372,13 +374,13 @@ load_data<-function(data_name,web='ftp://ftp.ncbi.nlm.nih.gov/geo/series/GSE92nn
 
 #  Create data for TPM (ggplot)
 Genes_mean_tpm<-function(genes,tpm_data,tsne_data,title,fun=mean,doplot=TRUE){
-  Log2TPM<-as.numeric(apply(tpm_data[genes,],2,fun))
+  Log2TPM<-as.numeric(apply(tpm_data[genes,],2,fun,na.rm=TRUE))
   if(doplot){
     title_1<-paste(genes,collapse = ',')
     title_2<-paste(title,'(',title_1,')',sep='')
-    ggplot(tsne_data, aes(x=tSNE_1, y=tSNE_2))+geom_point(aes(color=Log2TPM))+theme(legend.title = element_text(size=8,color='blue',face='bold'),
+    print(ggplot(tsne_data, aes(x=tSNE_1, y=tSNE_2))+geom_point(aes(color=Log2TPM))+theme(legend.title = element_text(size=8,color='blue',face='bold'),
                                                                                     legend.position = 'right') +ggtitle(title_2)+
-                                                                                     scale_color_gradient2(low='lightblue',mid='green',high='red',name='Log2\nTPM+1')
+                                                                                     scale_color_gradient2(low='lightblue',mid='green',high='red',name='Log2\nTPM+1'))
   }
   else{
     return(Log2TPM)
@@ -399,7 +401,7 @@ Create_plot_data<-function(genes,fun=scale,origin.data,var_genes,cell_groups,
   genes.names<-rownames(origin.data)
   for(g in genes){
     if(!g%in%genes.names){
-      cat(sprintf('%s is not exists',g))
+      cat(sprintf('%s is not exists\n',g))
     }
   }
   
@@ -434,3 +436,64 @@ Create_plot_data<-function(genes,fun=scale,origin.data,var_genes,cell_groups,
 }
 
 
+Facet_wrap_fun<-function(gene,tpm.data,tsne.data,
+                         condition=c('Control','Salm'),all.condition=Salmonellalnfect.condition){
+  cat(sprintf('There ara %d conditions\n',length(condition)))
+  tsne<-data.frame()
+  for(i in 1:length(condition)){
+    tsne<-rbind(tsne,tsne.data[all.condition%in%condition[i],])
+  }
+  cat(sprintf('Whether creat data accurate %d \n',sum(dim(tsne.data)[1]==dim(tsne)[1])))
+  
+  ###  create  gene expression TPM data
+  gene.mp<-c()
+  for(i in 1:length(condition)){
+    gene.mp<-c(gene.mp,as.numeric(tpm.data[gene,all.condition%in%condition[i]]))
+  }
+  
+  ### create Condition
+  Condition<-c()
+  for(i in 1:length(condition)){
+    Condition<-c(Condition,rep(condition[i],sum(all.condition%in%condition[i])))
+  }
+  tsne$Gene.Mp<-gene.mp
+  tsne$Condition<-Condition
+  tsne$Gene<-rep(gene,dim(tsne)[1])
+  
+  return(tsne)
+}
+
+
+Heatmap_fun<-function(genes,tpm.data,condition,all.condition){
+  cat(sprintf('There ara %d conditions\n',length(condition)))
+  tpm<-data.frame()
+  for(i in 1:length(condition)){
+    tpm<-rbind(tpm,t(tpm.data[genes,all.condition%in%condition[i],]))
+  }
+  #cat(sprintf('Whether creat data accurate %d \n',sum(dim(tpm.data)[1]==dim(tpm)[1])))
+  tpm<-data.frame(t(tpm))
+  cat(sprintf('Whether creat data accurate %d \n',sum(dim(tpm.data)[1]==dim(tpm)[2])))
+  ### create Condition
+  Condition<-c()
+  for(i in 1:length(condition)){
+    Condition<-c(Condition,rep(condition[i],sum(all.condition%in%condition[i])))
+  }
+  
+  return(list(Condition,tpm))
+}
+
+
+###   Find the k to make 3 cluster
+###  k-nearest method
+Find_K<-function(K,pca.data,n=3){
+  dm<-as.matrix(dist(pca.data))
+  for(k in K){
+    knn<-build_knn_graph(dm,k=k)
+    clustering<-cluster_graph(knn)$partition
+    if(length(unique(clustering))==n){
+      cat(sprintf('Find the K:%d\n',k))
+      return(k)
+      break
+    }
+  }
+}
